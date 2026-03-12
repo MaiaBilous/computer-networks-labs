@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>Лабораторна №2</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+<div class="container">
+
+<a class="back" href="labs.html">← Назад до лабораторних</a>
+
+<h1>Лабораторна робота №2</h1>
+
+<h2>Завдання</h2>
+<p>
+Створити програму Python для перевірки доступності
+не тільки одного хоста, а й діапазону IP-адрес.
+</p>
+
+<h2>Принцип роботи</h2>
+<p>
+Користувач вводить одну IP-адресу або діапазон у форматі
+<b>startIP-endIP</b>. Програма послідовно виконує ping
+для кожної адреси та виводить результат.
+</p>
+
+<h2>Код програми</h2>
+
+<pre><code>
+from pythonping import ping
+import ipaddress
+
+def ping_host(host, count):
+    print(f"\nPing {host}")
+    try:
+        result = ping(host, count=count)
+        print(result)
+    except Exception as err:
+        print(f"Помилка: {err}")
+
+def ip_range(start_ip, end_ip):
+    start = ipaddress.IPv4Address(start_ip)
+    end = ipaddress.IPv4Address(end_ip)
+
+    if start > end:
+        start, end = end, start
+
+    current = start
+    while current <= end:
+        yield str(current)
+        current += 1
+
+def main():
+    host = input("Введіть адресу або діапазон: ")
+    count = int(input("Кількість пакетів: "))
+
+    if "-" in host:
+        start_ip, end_ip = host.split("-")
+        for ip in ip_range(start_ip, end_ip):
+            ping_host(ip, count)
+    else:
+        ping_host(host, count)
+
+if __name__ == "__main__":
+    main()
+</code></pre>
+
+<h2>Результат виконання</h2>
+
+<pre><code>
+Enter the host: 192.168.0.1-192.168.0.5
+Packets: 2
+
+Ping 192.168.0.1
+Reply from 192.168.0.1, 29 bytes in 5.76ms
+
+Ping 192.168.0.2
+Request timed out
+</code></pre>
+
+</div>
+
+</body>
+</html>

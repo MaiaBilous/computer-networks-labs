@@ -1,0 +1,68 @@
+body{
+    font-family: Arial, sans-serif;
+    background:#f5f7fa;
+    margin:0;
+}
+
+.container{
+    max-width:900px;
+    margin:auto;
+    padding:40px;
+    background:white;
+}
+
+h1{
+    color:#222;
+}
+
+h2{
+    margin-top:30px;
+    color:#333;
+}
+
+.student{
+    background:#eef3ff;
+    padding:10px;
+    border-left:4px solid #4a6cf7;
+}
+
+.labs-list{
+    margin-top:20px;
+}
+
+.labs-list li{
+    margin:10px 0;
+}
+
+.labs-list a{
+    text-decoration:none;
+    font-size:18px;
+    color:#2b59ff;
+}
+
+.labs-list a:hover{
+    text-decoration:underline;
+}
+
+.back{
+    display:inline-block;
+    margin-bottom:20px;
+    text-decoration:none;
+    color:#555;
+}
+
+/* Блок коду */
+
+pre{
+    background:#1e1e1e;
+    color:#e6e6e6;
+    padding:20px;
+    border-radius:8px;
+    overflow-x:auto;
+    margin:15px 0;
+}
+
+code{
+    font-family: Consolas, monospace;
+    font-size:14px;
+}

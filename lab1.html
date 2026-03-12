@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>Лабораторна №1</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+<div class="container">
+
+<a class="back" href="labs.html">← Назад до лабораторних</a>
+
+<h1>Лабораторна робота №1</h1>
+
+<h2>Завдання</h2>
+<p>
+Розробити програму мовою Python, яка реалізує команду ping
+для перевірки доступності мережевого вузла.
+</p>
+
+<h2>Принцип роботи програми</h2>
+<p>
+Користувач вводить адресу хоста (IP або домен) та кількість пакетів.
+Програма за допомогою бібліотеки <b>pythonping</b> надсилає
+ICMP-запити до вказаного сервера.
+</p>
+
+<p>
+Після завершення перевірки на екран виводиться інформація
+про відповіді від хоста та статистика часу затримки.
+</p>
+
+<h2>Код програми</h2>
+
+<h3>index.py</h3>
+
+<pre><code>
+from pythonping import ping
+
+def main():
+    host = input("Введіть адресу хоста: ")
+    count = int(input("Кількість пакетів: "))
+
+    print(f"Ping {host} ({count} пакетів)")
+    result = ping(host, count=count)
+
+    print(result)
+
+if __name__ == "__main__":
+    main()
+</code></pre>
+
+<h3>requirements.txt</h3>
+
+<pre><code>
+pythonping==1.1.4
+</code></pre>
+
+<h2>Результат виконання</h2>
+
+<pre><code>
+$ python index.py
+
+Введіть адресу хоста: 192.168.1.1
+Кількість пакетів: 7
+
+Ping 192.168.1.1 (7 пакетів)
+
+Reply from 192.168.1.1, 29 bytes in 2.59ms
+Reply from 192.168.1.1, 29 bytes in 2.12ms
+Reply from 192.168.1.1, 29 bytes in 1.32ms
+Reply from 192.168.1.1, 29 bytes in 2.09ms
+Reply from 192.168.1.1, 29 bytes in 1.11ms
+Reply from 192.168.1.1, 29 bytes in 3.02ms
+Reply from 192.168.1.1, 29 bytes in 2.34ms
+</code></pre>
+
+</div>
+
+</body>
+</html>
