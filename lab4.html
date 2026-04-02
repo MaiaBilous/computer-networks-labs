@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>Лабораторна №4</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+    .code-block {
+        background: #1e1e1e;
+        color: #e6e6e6;
+        padding: 20px;
+        border-radius: 8px;
+        overflow-x: auto;
+        margin: 15px 0;
+        font-family: Consolas, monospace;
+        font-size: 14px;
+    }
+    .note {
+        background: #fff3cd;
+        border-left: 4px solid #ffc107;
+        padding: 15px;
+        margin: 20px 0;
+    }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<a class="back" href="labs.html">← Назад до лабораторних</a>
+
+<h1>Лабораторна робота №4</h1>
+
+<h2>Завдання</h2>
+<p>
+Додати можливості фільтрації моніторингу в реальному часі за:
+</p>
+<ul>
+<li>Зовнішніми або внутрішніми IP-адресами</li>
+<li>Протоколами (TCP, UDP, ICMP)</li>
+<li>Портами</li>
+</ul>
+
+<h2>Принцип роботи програми</h2>
+<p>
+Програма виконує моніторинг мережевих вузлів у реальному часі
+та дозволяє динамічно фільтрувати результати за різними критеріями.
+</p>
+<p>
+Користувач може:
+</p>
+<ul>
+<li>Фільтрувати лише зовнішні (публічні) або лише внутрішні (приватні) IP-адреси</li>
+<li>Вказати протокол для перевірки (ICMP для ping, або TCP для портів)</li>
+<li>Вказати порт для перевірки (при використанні TCP)</li>
+</ul>
+
+<div class="note">
+<strong> Примітка:</strong> Для перевірки TCP-портів використовується бібліотека <code>socket</code>.
+Для роботи з ICMP (ping) використовується <code>pythonping</code>.
+</div>
+
+<h2>Код програми</h2>
+
+<h3>monitor_filter.py</h3>
+
+<pre><code>
+from pythonping import ping
+import ipaddress
+import socket
+import sys
+import time
+
+def is_private_ip(ip):
+    """Перевіряє, чи є IP-адреса внутрішньою (приватною)"""
+    try:
+        ip_obj = ipaddress.ip_address(ip)
+        return ip_obj.is_private
+    except:
+        return False
+
+def is_public_ip(ip):
+    """Перевіряє, чи є IP-адреса зовнішньою (публічною)"""
+    return not is_private_ip(ip)
+
+def check_ping(host, count=2, timeout=2):
+    """Перевірка доступності через ICMP (ping)"""
+    try:
+        result = ping(host, count=count, timeout=timeout)
+        return result.success()
+    except:
+        return False
+
+def check_tcp_port(host, port, timeout=2):
+    """Перевірка доступності TCP-порту"""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        result = sock.connect_ex((host, port))
+        sock.close()
+        return result == 0
+    except:
+        return False
+
+def get_ip_filter_choice():
+    """Отримує вибір фільтрації за типом IP"""
+    print("\nФільтрація за IP-адресами:")
+    print("  1. Всі адреси")
+    print("  2. Тільки внутрішні (приватні) IP")
+    print("  3. Тільки зовнішні (публічні) IP")
+    choice = input("Ваш вибір (1-3): ").strip()
+    return choice
+
+def get_protocol_choice():
+    """Отримує вибір протоколу"""
+    print("\nВиберіть протокол:")
+    print("  1. ICMP (ping)")
+    print("  2. TCP (перевірка порту)")
+    choice = input("Ваш вибір (1-2): ").strip()
+    return choice
+
+def apply_ip_filter(host, filter_type):
+    """
+    Застосовує фільтр до окремого хоста.
+    Повертає True, якщо хост проходить фільтр.
+    """
+    if filter_type == "1":  # Всі адреси
+        return True
+    elif filter_type == "2":  # Тільки внутрішні
+        return is_private_ip(host)
+    elif filter_type == "3":  # Тільки зовнішні
+        return is_public_ip(host)
+    return True
+
+def monitor_hosts(hosts, protocol, port, ip_filter, count=2):
+    """
+    Моніторинг хостів у реальному часі з фільтрацією.
+    """
+    print("\n" + "=" * 60)
+    print("     МОНІТОРИНГ У РЕАЛЬНОМУ ЧАСІ")
+    print("=" * 60)
+    
+    protocol_name = "ICMP (ping)" if protocol == "1" else f"TCP (порт {port})"
+    ip_filter_name = {
+        "1": "Всі адреси",
+        "2": "Тільки внутрішні (приватні)",
+        "3": "Тільки зовнішні (публічні)"
+    }.get(ip_filter, "Всі адреси")
+    
+    print(f"\n📋 Налаштування фільтрації:")
+    print(f"   • IP-фільтр: {ip_filter_name}")
+    print(f"   • Протокол: {protocol_name}")
+    print(f"   • Хостів у списку: {len(hosts)}")
+    
+    # Фільтруємо хости за IP-типом
+    filtered_hosts = [h for h in hosts if apply_ip_filter(h, ip_filter)]
+    print(f"   • Після IP-фільтра: {len(filtered_hosts)}")
+    
+    print("\n🔄 Починаємо моніторинг... (Ctrl+C для виходу)\n")
+    
+    try:
+        round_num = 1
+        while True:
+            print(f"\n--- Цикл моніторингу #{round_num} ---")
+            print(f"Час: {time.strftime('%H:%M:%S')}")
+            
+            working = []
+            dead = []
+            
+            for host in filtered_hosts:
+                if protocol == "1":  # ICMP
+                    status = check_ping(host, count)
+                else:  # TCP
+                    status = check_tcp_port(host, port)
+                
+                if status:
+                    working.append(host)
+                    print(f"   {host} - ДОСТУПНИЙ")
+                else:
+                    dead.append(host)
+                    print(f"   {host} - НЕДОСТУПНИЙ")
+            
+            print(f"\n Статистика циклу:")
+            print(f"   Доступні: {len(working)}")
+            print(f"   Недоступні: {len(dead)}")
+            
+            round_num += 1
+            time.sleep(5)  # Пауза між циклами
+    except KeyboardInterrupt:
+        print("\n\n Моніторинг зупинено користувачем.")
+
+def main():
+    print("=" * 60)
+    print("     МОНІТОРИНГ З ФІЛЬТРАЦІЄЮ В РЕАЛЬНОМУ ЧАСІ")
+    print("=" * 60)
+    
+    # Введення списку хостів
+    print("\nВведіть IP-адреси для моніторингу (через кому або пробіл)")
+    print("Приклад: 8.8.8.8, 192.168.1.1, 1.1.1.1, 10.0.0.1")
+    hosts_input = input("IP-адреси: ")
+    
+    # Розбираємо введені адреси
+    hosts = []
+    for part in hosts_input.replace(",", " ").split():
+        if part.strip():
+            hosts.append(part.strip())
+    
+    if not hosts:
+        print(" Не вказано жодної IP-адреси!")
+        return
+    
+    # Вибір фільтрації за типом IP
+    ip_filter = get_ip_filter_choice()
+    
+    # Вибір протоколу
+    protocol = get_protocol_choice()
+    
+    port = None
+    if protocol == "2":  # TCP
+        port = int(input("Введіть номер порту для перевірки: "))
+    
+    # Запуск моніторингу
+    monitor_hosts(hosts, protocol, port, ip_filter)
+
+if __name__ == "__main__":
+    main()
+</code></pre>
+
+<h3>requirements.txt</h3>
+
+<pre><code>
+pythonping==1.1.4
+</code></pre>
+
+<h2>Результат виконання</h2>
+
+<pre><code>
+============================================================
+     МОНІТОРИНГ З ФІЛЬТРАЦІЄЮ В РЕАЛЬНОМУ ЧАСІ
+============================================================
+
+Введіть IP-адреси для моніторингу (через кому або пробіл)
+Приклад: 8.8.8.8, 192.168.1.1, 1.1.1.1, 10.0.0.1
+IP-адреси: 8.8.8.8, 192.168.1.1, 1.1.1.1, 10.0.0.1
+
+Фільтрація за IP-адресами:
+  1. Всі адреси
+  2. Тільки внутрішні (приватні) IP
+  3. Тільки зовнішні (публічні) IP
+Ваш вибір (1-3): 2
+
+Виберіть протокол:
+  1. ICMP (ping)
+  2. TCP (перевірка порту)
+Ваш вибір (1-2): 1
+
+============================================================
+     МОНІТОРИНГ У РЕАЛЬНОМУ ЧАСІ
+============================================================
+
+ Налаштування фільтрації:
+   • IP-фільтр: Тільки внутрішні (приватні)
+   • Протокол: ICMP (ping)
+   • Хостів у списку: 4
+   • Після IP-фільтра: 2
+
+ Починаємо моніторинг... (Ctrl+C для виходу)
+
+--- Цикл моніторингу #1 ---
+Час: 14:32:15
+   192.168.1.1 - ДОСТУПНИЙ
+   10.0.0.1 - НЕДОСТУПНИЙ
+
+ Статистика циклу:
+   Доступні: 1
+   Недоступні: 1
+
+--- Цикл моніторингу #2 ---
+Час: 14:32:20
+   192.168.1.1 - ДОСТУПНИЙ
+   10.0.0.1 - НЕДОСТУПНИЙ
+
+ Статистика циклу:
+   Доступні: 1
+   Недоступні: 1
+
+^C
+ Моніторинг зупинено користувачем.
+</code></pre>
+
+<div class="note">
+<strong>📝 Пояснення до коду:</strong>
+<ul style="margin-top: 10px; margin-left: 20px;">
+<li><strong>is_private_ip()</strong> – визначає, чи є адреса внутрішньою (приватною), використовуючи модуль ipaddress</li>
+<li><strong>is_public_ip()</strong> – перевіряє, чи є адреса зовнішньою (публічною)</li>
+<li><strong>check_ping()</strong> – перевіряє доступність через ICMP-запити</li>
+<li><strong>check_tcp_port()</strong> – перевіряє доступність TCP-порту через socket</li>
+<li><strong>monitor_hosts()</strong> – виконує моніторинг у нескінченному циклі з фільтрацією та виведенням статистики</li>
+</ul>
+</div>
+
+</div>
+
+</body>
+</html>
