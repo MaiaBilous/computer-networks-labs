@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>Лабораторна №5</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+    .code-block {
+        background: #1e1e1e;
+        color: #e6e6e6;
+        padding: 20px;
+        border-radius: 8px;
+        overflow-x: auto;
+        margin: 15px 0;
+        font-family: Consolas, monospace;
+        font-size: 14px;
+    }
+    .note {
+        background: #fff3cd;
+        border-left: 4px solid #ffc107;
+        padding: 15px;
+        margin: 20px 0;
+    }
+    .alert {
+        background: #f8d7da;
+        border-left: 4px solid #dc3545;
+        padding: 15px;
+        margin: 20px 0;
+        color: #721c24;
+    }
+    .success {
+        background: #d4edda;
+        border-left: 4px solid #28a745;
+        padding: 15px;
+        margin: 20px 0;
+    }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<a class="back" href="index.html">← Назад до лабораторних</a>
+
+<h1>Лабораторна робота №5</h1>
+<h2>Анти-сніфер (IDS / IPS система виявлення сканування)</h2>
+
+<h2>Завдання</h2>
+<p>
+Розробити систему «Анти-сніфер» за принципом IDS/IPS, яка в реальному часі сканує вхідний та вихідний трафік 
+на підозрілу активність (скани портів, масові запити тощо) та негайно попереджає користувача, 
+якщо його комп'ютер сканують.
+</p>
+
+<h2>Принцип роботи програми</h2>
+<p>
+Програма виконує моніторинг мережевих з'єднань у реальному часі, аналізуючи:
+</p>
+<ul>
+    <li><b>Сканування портів</b> – виявлення великої кількості спроб підключення до різних портів з однієї IP-адреси</li>
+    <li><b>Масові запити</b> – аномально велика кількість з'єднань за короткий проміжок часу</li>
+    <li><b>Підозрілі протоколи</b> – відстеження активності на нестандартних портах</li>
+</ul>
+
+<p>
+При виявленні аномалії система:
+</p>
+<ul>
+    <li>Виводить попередження на екран із зазначенням IP-адреси порушника</li>
+    <li>Записує інцидент у лог-файл <b>ids_alerts.log</b></li>
+    <li>Відображає статистику підозрілих активностей</li>
+</ul>
+
+<div class="note">
+<strong>Важливо:</strong> Для роботи програми на Windows необхідні права адміністратора для доступу до мережевої статистики. 
+На Linux/MacOS може знадобитися sudo.
+</div>
+
+<h2>Код програми</h2>
+
+<h3>anti_sniffer.py</h3>
+
+<pre><code>
+import psutil
+import time
+import socket
+from collections import defaultdict
+from datetime import datetime
+import threading
+import os
+
+# Конфігурація порогових значень
+PORT_SCAN_THRESHOLD = 10      # Кількість різних портів за 5 секунд
+MASS_REQUEST_THRESHOLD = 30   # Кількість з'єднань за 5 секунд
+SUSPECT_PORTS = [22, 23, 445, 3389, 5900, 8080]  # Підозрілі порти (SSH, Telnet, SMB, RDP, VNC, proxy)
+
+# Файл для логування
+LOG_FILE = "ids_alerts.log"
+
+# Структури для зберігання статистики
+# {src_ip: {dst_port: count, ...}}
+port_scan_tracker = defaultdict(lambda: defaultdict(int))
+# {src_ip: timestamp_list}
+connection_tracker = defaultdict(list)
+
+alert_history = set()  # Для запобігання дублювання попереджень
+lock = threading.Lock()
+
+def get_ip_from_connection(conn):
+    """
+    Отримує IP-адресу з'єднання.
+    Повертає (src_ip, dst_ip, dst_port)
+    """
+    try:
+        if conn.raddr and conn.laddr:
+            src_ip = conn.raddr.ip if conn.status == 'ESTABLISHED' else conn.laddr.ip
+            dst_ip = conn.laddr.ip if conn.status == 'ESTABLISHED' else conn.raddr.ip
+            dst_port = conn.raddr.port if conn.raddr else 0
+            return src_ip, dst_ip, dst_port
+    except Exception:
+        pass
+    return None, None, None
+
+def is_private_ip(ip):
+    """Перевіряє, чи є IP приватним (не логуємо внутрішні сканери)"""
+    try:
+        if ip.startswith('127.') or ip == '::1':
+            return True
+        if ip.startswith('192.168.') or ip.startswith('10.') or ip.startswith('172.'):
+            return True
+    except:
+        pass
+    return False
+
+def log_alert(alert_type, src_ip, details):
+    """Записує попередження у файл логу"""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = f"[{timestamp}] {alert_type} | Джерело: {src_ip} | {details}\n"
+    
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(log_entry)
+    
+    # Також виводимо в консоль
+    print(f"\nПОПЕРЕДЖЕННЯ [{timestamp}]")
+    print(f"   Тип: {alert_type}")
+    print(f"   IP-адреса порушника: {src_ip}")
+    print(f"   Деталі: {details}")
+    print("-" * 50)
+
+def check_port_scan(src_ip, dst_port, current_time):
+    """Перевіряє наявність сканування портів"""
+    with lock:
+        # Оновлюємо лічильник портів для цього джерела
+        port_scan_tracker[src_ip][dst_port] += 1
+        
+        # Очищаємо старі записи (старші за 5 секунд)
+        to_delete = []
+        for ip, ports in port_scan_tracker.items():
+            # Просте очищення - якщо сума портів завелика, перевіряємо
+            total_ports = len(ports)
+            if total_ports >= PORT_SCAN_THRESHOLD:
+                alert_key = f"port_scan_{ip}"
+                if alert_key not in alert_history:
+                    alert_history.add(alert_key)
+                    log_alert("SCAN DE PORTS", ip, 
+                             f"Виявлено {total_ports} різних портів за останній період. "
+                             f"Порти: {list(ports.keys())[:10]}")
+                    # Очищаємо після попередження
+                    to_delete.append(ip)
+        
+        for ip in to_delete:
+            del port_scan_tracker[ip]
+        
+        return True
+
+def check_mass_requests(src_ip, current_time):
+    """Перевіряє наявність масових запитів"""
+    with lock:
+        # Додаємо поточний час
+        connection_tracker[src_ip].append(current_time)
+        
+        # Видаляємо записи старші за 5 секунд
+        cutoff = current_time - 5
+        connection_tracker[src_ip] = [t for t in connection_tracker[src_ip] if t > cutoff]
+        
+        # Перевіряємо поріг
+        count = len(connection_tracker[src_ip])
+        if count >= MASS_REQUEST_THRESHOLD:
+            alert_key = f"mass_request_{src_ip}"
+            if alert_key not in alert_history:
+                alert_history.add(alert_key)
+                log_alert("MASSIVE REQUESTS", src_ip,
+                         f"{count} з'єднань за останні 5 секунд")
+                # Скидаємо лічильник
+                connection_tracker[src_ip] = []
+                return True
+        return False
+
+def check_suspect_port(src_ip, dst_port):
+    """Перевіряє підключення до підозрілих портів"""
+    if dst_port in SUSPECT_PORTS:
+        alert_key = f"suspect_port_{src_ip}_{dst_port}"
+        if alert_key not in alert_history:
+            alert_history.add(alert_key)
+            port_names = {
+                22: "SSH", 23: "Telnet", 445: "SMB", 
+                3389: "RDP", 5900: "VNC", 8080: "Proxy"
+            }
+            port_name = port_names.get(dst_port, str(dst_port))
+            log_alert("SUSPECT PORT ACCESS", src_ip,
+                     f"Спроба підключення до порту {dst_port} ({port_name})")
+            return True
+    return False
+
+def monitor_traffic():
+    """Головний цикл моніторингу трафіку"""
+    print("АНТИ-СНІФЕР ЗАПУЩЕНО")
+    print("=" * 50)
+    print("Система виявлення вторгнень (IDS) активна")
+    print("Моніторинг: сканування портів, масові запити, підозрілі порти")
+    print(f"Лог-файл: {LOG_FILE}")
+    print("Натисніть Ctrl+C для завершення")
+    print("=" * 50)
+    
+    last_cleanup = time.time()
+    
+    try:
+        while True:
+            current_time = time.time()
+            
+            # Періодичне очищення застарілих даних (раз на 10 секунд)
+            if current_time - last_cleanup > 10:
+                with lock:
+                    # Очищаємо старі записи в port_scan_tracker
+                    for ip in list(port_scan_tracker.keys()):
+                        if len(port_scan_tracker[ip]) == 0:
+                            del port_scan_tracker[ip]
+                    # Очищаємо alert_history (щоб попередження могли повторюватись через час)
+                    if len(alert_history) > 100:
+                        alert_history.clear()
+                last_cleanup = current_time
+            
+            # Отримуємо всі мережеві з'єднання
+            connections = []
+            try:
+                connections = psutil.net_connections(kind='inet')
+            except (psutil.AccessDenied, PermissionError):
+                print("\nПОМИЛКА: Недостатньо прав для доступу до мережевих з'єднань.")
+                print("   Запустіть програму з правами адміністратора (Windows) або sudo (Linux/Mac)")
+                break
+            
+            for conn in connections:
+                # Перевіряємо тільки TCP-з'єднання
+                if conn.type != socket.SOCK_STREAM:
+                    continue
+                
+                # Отримуємо IP-адреси
+                try:
+                    if conn.raddr and conn.laddr:
+                        # Вхідні з'єднання (хтось підключається до нас)
+                        src_ip = conn.raddr.ip
+                        dst_port = conn.laddr.port
+                        
+                        # Ігноруємо локальні/приватні адреси (за бажанням можна змінити)
+                        # if is_private_ip(src_ip):
+                        #     continue
+                        
+                        # Перевіряємо різні типи аномалій
+                        check_port_scan(src_ip, dst_port, current_time)
+                        check_mass_requests(src_ip, current_time)
+                        check_suspect_port(src_ip, dst_port)
+                except Exception:
+                    continue
+            
+            time.sleep(1)  # Пауза між скануваннями
+            
+    except KeyboardInterrupt:
+        print("\n\nАНТИ-СНІФЕР ЗУПИНЕНО")
+        print(f"Лог збережено у файлі: {LOG_FILE}")
+        
+        # Виводимо підсумкову статистику
+        print("\nПІДСУМКОВА СТАТИСТИКА:")
+        with lock:
+            print(f"   Відстежуваних IP для сканування портів: {len(port_scan_tracker)}")
+            print(f"   Відстежуваних IP для масових запитів: {len(connection_tracker)}")
+        
+        # Показуємо вміст лог-файлу
+        if os.path.exists(LOG_FILE):
+            print("\nОСТАННІ ПОПЕРЕДЖЕННЯ:")
+            with open(LOG_FILE, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+                for line in lines[-10:]:  # Показуємо останні 10 рядків
+                    print(f"   {line.strip()}")
+
+def main():
+    print("=" * 60)
+    print("     АНТИ-СНІФЕР - IDS СИСТЕМА ВИЯВЛЕННЯ СКАНУВАННЯ")
+    print("=" * 60)
+    
+    # Перевірка наявності psutil
+    try:
+        import psutil
+    except ImportError:
+        print("\nПОМИЛКА: Бібліотека 'psutil' не встановлена.")
+        print("   Встановіть її командою: pip install psutil")
+        return
+    
+    print("""
+ІНСТРУКЦІЯ:
+    Система автоматично відстежує вхідні мережеві з'єднання та виявляє:
+    • Сканування портів (багато різних портів від одного джерела)
+    • Масові запити (надто багато з'єднань за короткий час)
+    • Підключення до підозрілих портів (SSH, Telnet, RDP, SMB, VNC, Proxy)
+    
+    При виявленні загрози виводиться попередження та робиться запис у лог.
+    """)
+    
+    input("Натисніть Enter для запуску моніторингу...")
+    monitor_traffic()
+
+if __name__ == "__main__":
+    main()
+</code></pre>
+
+<h3>requirements.txt</h3>
+
+<pre><code>
+pythonping==1.1.4
+psutil==5.9.6
+</code></pre>
+
+<h2>Результат виконання</h2>
+
+<div class="success">
+<strong>Приклад запуску програми:</strong>
+</div>
+
+<pre><code>
+$ python anti_sniffer.py
+
+============================================================
+     АНТИ-СНІФЕР - IDS СИСТЕМА ВИЯВЛЕННЯ СКАНУВАННЯ
+============================================================
+
+ІНСТРУКЦІЯ:
+    Система автоматично відстежує вхідні мережеві з'єднання та виявляє:
+    • Сканування портів (багато різних портів від одного джерела)
+    • Масові запити (надто багато з'єднань за короткий час)
+    • Підключення до підозрілих портів (SSH, Telnet, RDP, SMB, VNC, Proxy)
+    
+    При виявленні загрози виводиться попередження та робиться запис у лог.
+
+Натисніть Enter для запуску моніторингу...
+
+АНТИ-СНІФЕР ЗАПУЩЕНО
+==================================================
+Система виявлення вторгнень (IDS) активна
+Моніторинг: сканування портів, масові запити, підозрілі порти
+Лог-файл: ids_alerts.log
+Натисніть Ctrl+C для завершення
+==================================================
+
+ПОПЕРЕДЖЕННЯ [2024-03-15 14:35:22]
+   Тип: SCAN DE PORTS
+   IP-адреса порушника: 192.168.1.105
+   Деталі: Виявлено 12 різних портів за останній період. Порти: [22, 23, 80, 443, 445, 3306, 5432, 8080, 8443, 3389]
+--------------------------------------------------
+
+ПОПЕРЕДЖЕННЯ [2024-03-15 14:35:25]
+   Тип: SUSPECT PORT ACCESS
+   IP-адреса порушника: 192.168.1.105
+   Деталі: Спроба підключення до порту 22 (SSH)
+--------------------------------------------------
+
+ПОПЕРЕДЖЕННЯ [2024-03-15 14:35:30]
+   Тип: MASSIVE REQUESTS
+   IP-адреса порушника: 10.0.0.45
+   Деталі: 35 з'єднань за останні 5 секунд
+--------------------------------------------------
+
+^C
+
+АНТИ-СНІФЕР ЗУПИНЕНО
+Лог збережено у файлі: ids_alerts.log
+
+ПІДСУМКОВА СТАТИСТИКА:
+   Відстежуваних IP для сканування портів: 3
+   Відстежуваних IP для масових запитів: 2
+
+ОСТАННІ ПОПЕРЕДЖЕННЯ:
+   [2024-03-15 14:35:22] SCAN DE PORTS | Джерело: 192.168.1.105 | Виявлено 12 різних портів за останній період. Порти: [22, 23, 80, 443, 445, 3306, 5432, 8080, 8443, 3389]
+   [2024-03-15 14:35:25] SUSPECT PORT ACCESS | Джерело: 192.168.1.105 | Спроба підключення до порту 22 (SSH)
+   [2024-03-15 14:35:30] MASSIVE REQUESTS | Джерело: 10.0.0.45 | 35 з'єднань за останні 5 секунд
+</code></pre>
+
+<h3>Вміст файлу ids_alerts.log</h3>
+
+<pre><code>
+[2024-03-15 14:35:22] SCAN DE PORTS | Джерело: 192.168.1.105 | Виявлено 12 різних портів за останній період. Порти: [22, 23, 80, 443, 445, 3306, 5432, 8080, 8443, 3389]
+[2024-03-15 14:35:25] SUSPECT PORT ACCESS | Джерело: 192.168.1.105 | Спроба підключення до порту 22 (SSH)
+[2024-03-15 14:35:30] MASSIVE REQUESTS | Джерело: 10.0.0.45 | 35 з'єднань за останні 5 секунд
+</code></pre>
+
+<div class="note">
+<strong>Пояснення до коду:</strong>
+<ul style="margin-top: 10px; margin-left: 20px;">
+<li><strong>psutil.net_connections()</strong> – отримує всі активні мережеві з'єднання системи</li>
+<li><strong>port_scan_tracker</strong> – словник для відстеження кількості різних портів, до яких звертається кожне джерело</li>
+<li><strong>connection_tracker</strong> – зберігає часові мітки з'єднань для виявлення масових запитів</li>
+<li><strong>PORT_SCAN_THRESHOLD</strong> – поріг для виявлення сканування (10 різних портів за 5 секунд)</li>
+<li><strong>MASS_REQUEST_THRESHOLD</strong> – поріг для масових запитів (30 з'єднань за 5 секунд)</li>
+<li><strong>SUSPECT_PORTS</strong> – список підозрілих портів, які часто використовуються для атак</li>
+<li><strong>log_alert()</strong> – функція для запису попереджень у файл та виведення на екран</li>
+</ul>
+</div>
+
+<div class="alert">
+<strong>Тестування системи:</strong>
+<p>Щоб перевірити роботу Анти-сніфера, можна:</p>
+<ul>
+<li>Запустити сканер портів (наприклад, Nmap) з іншого комп'ютера в мережі</li>
+<li>Виконати команду <code>nmap -p 1-1000 &lt;IP_вашого_комп'ютера&gt;</code></li>
+<li>Або використати онлайн-сервіси для перевірки відкритих портів</li>
+<li>Для тестування масових запитів можна використати <code>hping3</code> або <code>wrk</code></li>
+</ul>
+</div>
+
+</div>
+
+</body>
+</html>

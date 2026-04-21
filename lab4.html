@@ -28,7 +28,7 @@
 
 <div class="container">
 
-<a class="back" href="labs.html">← Назад до лабораторних</a>
+<a class="back" href="index.html">← Назад до лабораторних</a>
 
 <h1>Лабораторна робота №4</h1>
 
@@ -148,7 +148,7 @@ def monitor_hosts(hosts, protocol, port, ip_filter, count=2):
         "3": "Тільки зовнішні (публічні)"
     }.get(ip_filter, "Всі адреси")
     
-    print(f"\n📋 Налаштування фільтрації:")
+    print(f"\n Налаштування фільтрації:")
     print(f"   • IP-фільтр: {ip_filter_name}")
     print(f"   • Протокол: {protocol_name}")
     print(f"   • Хостів у списку: {len(hosts)}")
@@ -157,7 +157,7 @@ def monitor_hosts(hosts, protocol, port, ip_filter, count=2):
     filtered_hosts = [h for h in hosts if apply_ip_filter(h, ip_filter)]
     print(f"   • Після IP-фільтра: {len(filtered_hosts)}")
     
-    print("\n🔄 Починаємо моніторинг... (Ctrl+C для виходу)\n")
+    print("\n Починаємо моніторинг... (Ctrl+C для виходу)\n")
     
     try:
         round_num = 1
@@ -290,7 +290,7 @@ IP-адреси: 8.8.8.8, 192.168.1.1, 1.1.1.1, 10.0.0.1
 </code></pre>
 
 <div class="note">
-<strong>📝 Пояснення до коду:</strong>
+<strong> Пояснення до коду:</strong>
 <ul style="margin-top: 10px; margin-left: 20px;">
 <li><strong>is_private_ip()</strong> – визначає, чи є адреса внутрішньою (приватною), використовуючи модуль ipaddress</li>
 <li><strong>is_public_ip()</strong> – перевіряє, чи є адреса зовнішньою (публічною)</li>
